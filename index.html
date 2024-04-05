@@ -69,7 +69,7 @@
         placeholder="socketio url (default: localhost:3000)"
         id="url"
       />
-      <input type="text" placeholder="room name/id" id="room_id" />
+      <input type="text" placeholder="event name/id" id="room_id" />
       <select id="transport_method">
         <option value="both">transport method (default: both)</option>
         <option value="both">Both</option>
@@ -85,7 +85,7 @@
       <textarea id="message" placeholder="message"></textarea>
       <div class="actions">
         <button type="button" id="connect">Try Connect</button>
-        <button type="button" id="send_message">Send Message</button>
+        <button type="button" id="send_message">Send Event</button>
         <button type="button" id="clear_log">Clear Log</button>
       </div>
     </div>
@@ -99,9 +99,34 @@
     integrity="sha384-7EyYLQZgWBi67fBtVxw60/OWl1kjsfrPFcaU0pp0nAh+i8FD068QogUvg85Ewy1k"
     crossorigin="anonymous"
   ></script>
-  <script>
+
+  <!-- <script src="https://www.gstatic.com/firebasejs/10.10.0/firebase-app.js"></script> -->
+
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-app.js'
+
+    // If you enabled Analytics in your project, add the Firebase SDK for Google Analytics
+    import { getAnalytics } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-analytics.js'
+
+    // Add Firebase products that you want to use
+    import { getAuth, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-auth.js'
+    import { getFirestore } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js'
+
+    // add your credentials here
+    var firebaseConfig = {
+      apiKey: "",
+      authDomain: "",
+      projectId: "",
+      storageBucket: "",
+      messagingSenderId: "",
+      appId: "",
+      measurementId: ""
+    }
+
+    initializeApp(firebaseConfig);
+
     const url = document.getElementById("url");
-    const room_id = document.getElementById("room_id");
+    const event_id = document.getElementById("room_id");
     const transport_method = document.getElementById("transport_method");
     const encodeAsJSON = document.getElementById("encode").value;
     // const decodeAsJSON = document.getElementById("decode").value;
@@ -121,8 +146,29 @@
 
     let socket = null;
     let status = "disconnected";
+    let token;
 
-    textareas.forEach((textarea) => {
+    let login_obj = {
+      'email': '', // add your email
+      'password': '' // add your pass word/phrase
+    };
+
+    async function login()
+    {
+      const auth = getAuth();
+      await signInWithEmailAndPassword(auth, login_obj.email, login_obj.password)
+      .then((userCredential) => {
+        // Signed in
+        token = userCredential._tokenResponse.idToken;
+        // ...
+      })
+      .catch((error) => {
+        const errorCode = error.code;
+        const errorMessage = error.message;
+      });
+    }
+
+    textareas.forEach((textarea) =>  {
       textarea.addEventListener("keydown", (e) => {
         if (e.keyCode === 9) {
           e.preventDefault();
@@ -136,25 +182,30 @@
       });
     });
 
-    connect.addEventListener("click", () => {
+    connect.addEventListener("click", async () => {
       if (status !== "connected") {
         try {
-          if (!room_id.value || room_id.value === "") {
-            logs.textContent =
-              logs.textContent + "Error!!! => A room id is requred!\n\n";
-            return;
-          }
+            // fetch auth credentials
+            if (url.value.indexOf('/artisan')>-1)
+            {
+              login_obj.email = ''
+            } else { login_obj.email = '' }
 
-          if (status === "connecting") {
-            socket.disconnect();
-            connect.textContent = "Try Connect";
-            status = "disconnected";
-            return;
-          }
 
-          socket = io(
-            !url.value || url.value == "" ? "http://localhost:3000" : url.value,
-            { transports: methods[transport_method.value] }
+            if (status === "connecting") {
+              socket.disconnect();
+              connect.textContent = "Try Connect";
+              status = "disconnected";
+              return;
+            }
+            await login();
+            console.log(token);
+            socket = io(
+              !url.value || url.value == "" ? "http://localhost:3000" : url.value,
+              { 
+                transports: methods[transport_method.value],
+                auth: {access_token: token}
+              }
           );
 
           socket.connect();
@@ -165,12 +216,17 @@
             status = "connected";
             connect.textContent = "Disconnect";
             logs.textContent = logs.textContent + "Socket connected!\n\n";
-            socket.emit("join", room_id.value);
+            // socket.emit("join", room_id.value);
             logs.textContent =
               logs.textContent + "Joined room " + room_id.value + "\n\n";
           });
 
           socket.on("message", (data) => {
+            response.value = data;
+            logs.textContent = logs.textContent + "Data received!" + "\n\n";
+          });
+
+          socket.on("msg", (data) => {
             response.value = data;
             logs.textContent = logs.textContent + "Data received!" + "\n\n";
           });
@@ -191,8 +247,7 @@
             console.log(err);
           });
         } catch (err) {
-          logs.textContent =
-            logs.textContent +
+          logs.textContent = logs.textContent +
             "An error occurred! check console for more info.\n\n";
           console.log(err);
         }
@@ -211,7 +266,10 @@
       }
 
       if (message.value && message.value !== "") {
-        socket.emit("message", encode ? JSON.stringify(message.value) : message.value);
+        socket.emit(
+          event_id.value,
+          encode ? JSON.stringify(message.value) : message.value
+        );
       } else {
         logs.textContent =
           logs.textContent + "Error!!! => A message is requred!\n\n";
